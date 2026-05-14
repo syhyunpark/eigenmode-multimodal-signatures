@@ -107,7 +107,7 @@ Run rank-selection simulations:
     python3 scripts/summarize_gemf_rank_selection_simulations.py \
       --results_dir results/gemf_sim_rank_selection
 
-### Processed-feature MPI--LEMON analyses
+### MPI--LEMON analyses
 
 The following scripts reproduce the main processed-feature analyses when supplied with local processed input files:
 
@@ -121,7 +121,6 @@ Use `--help` to see the required arguments:
     python3 scripts/outercv_pca_rankselect_1se.py --help
     python3 scripts/outercv_gemf_rankselect_1se.py --help
 
-### Figure and table generation
 
 The following scripts generate manuscript tables and figures from analysis outputs:
 
@@ -130,18 +129,6 @@ The following scripts generate manuscript tables and figures from analysis outpu
 - `scripts/plot_gemf_panels.py`
 - `scripts/rank_gemf_factors_by_age.py`
 - `scripts/make_gemf_main_montage.py`
-
-## Reproducing manuscript analyses
-
-The manuscript analyses are organized into:
-
-1. GEMF simulation recovery analyses,
-2. GEMF simulation rank-selection analyses,
-3. MPI--LEMON fixed-dimension benchmarking,
-4. MPI--LEMON reconstruction-based rank selection,
-5. GEMF visualization.
-
-Template shell scripts will be provided in `run_scripts/`. These scripts use placeholder paths and should be edited to point to local processed data files.
 
 
 ## Quickstart example
