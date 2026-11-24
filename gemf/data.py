@@ -14,10 +14,10 @@ class MultiViewData:
 
     Shapes
     ------
-    S_tilde      : (n, K, q)
-    Sigma_tilde  : (n, K, K)
-    E            : (n, K, F, C)
-    lambda_vals  : (K,)
+    S_tilde      : (n, K_s, q)
+    Sigma_tilde  : (n, K_f, K_f)
+    E            : (n, K_e, F, C)
+    lambda_vals  : spatial penalty weights covering all retained modes
     age          : (n,) optional
     subject_ids  : (n,) optional
     """
@@ -44,8 +44,15 @@ class MultiViewData:
 
         if not (n_s == n_f == n_e):
             raise ValueError("Number of subjects must match across modalities")
-        if not (K_s == K_f1 == K_f2 == K_e == self.lambda_vals.shape[0]):
-            raise ValueError("Spatial mode dimension K must match across all arrays")
+        if K_f1 != K_f2:
+            raise ValueError("Sigma_tilde must be square for each subject")
+        if min(n_s, K_s, K_f1, K_e, q, F, C) < 1:
+            raise ValueError("Each data dimension must be positive")
+        if len(self.lambda_vals) < max(K_s, K_f1, K_e):
+            raise ValueError("lambda_vals must cover all retained cortical modes")
+        spectrum = self.lambda_vals[:max(K_s, K_f1, K_e)]
+        if not np.all(np.isfinite(spectrum)) or np.any(spectrum < 0):
+            raise ValueError("Retained spatial penalty weights must be finite and nonnegative")
 
         if self.age is not None and self.age.shape[0] != n_s:
             raise ValueError("age has incompatible length")
@@ -57,8 +64,23 @@ class MultiViewData:
         return self.S_tilde.shape[0]
 
     @property
-    def K(self) -> int:
+    def K_s(self) -> int:
         return self.S_tilde.shape[1]
+
+    @property
+    def K_f(self) -> int:
+        return self.Sigma_tilde.shape[1]
+
+    @property
+    def K_e(self) -> int:
+        return self.E.shape[1]
+
+    @property
+    def K(self) -> int:
+        """Common spatial dimension for legacy callers working with equal bandwidths."""
+        if self.K_s == self.K_f == self.K_e:
+            return self.K_s
+        raise ValueError("Use K_s, K_f, and K_e for unequal modality dimensions")
 
     @property
     def q(self) -> int:
@@ -94,23 +116,22 @@ def load_multiview_npz(path: str | Path) -> MultiViewData:
     if not path.exists():
         raise FileNotFoundError(f"Could not find data file: {path}")
 
-    arr = np.load(path, allow_pickle=True)
+    with np.load(path, allow_pickle=True) as arr:
+        required = ["S_tilde", "Sigma_tilde", "E", "lambda_vals"]
+        missing = [k for k in required if k not in arr]
+        if missing:
+            raise KeyError(f"Missing required arrays in {path}: {missing}")
 
-    required = ["S_tilde", "Sigma_tilde", "E", "lambda_vals"]
-    missing = [k for k in required if k not in arr]
-    if missing:
-        raise KeyError(f"Missing required arrays in {path}: {missing}")
+        age = arr["age"] if "age" in arr else None
+        subject_ids = arr["subject_ids"] if "subject_ids" in arr else None
 
-    age = arr["age"] if "age" in arr else None
-    subject_ids = arr["subject_ids"] if "subject_ids" in arr else None
-
-    data = MultiViewData(
-        S_tilde=np.asarray(arr["S_tilde"], dtype=float),
-        Sigma_tilde=np.asarray(arr["Sigma_tilde"], dtype=float),
-        E=np.asarray(arr["E"], dtype=float),
-        lambda_vals=np.asarray(arr["lambda_vals"], dtype=float),
-        age=None if age is None else np.asarray(age, dtype=float),
-        subject_ids=None if subject_ids is None else np.asarray(subject_ids),
-    )
+        data = MultiViewData(
+            S_tilde=np.asarray(arr["S_tilde"], dtype=float),
+            Sigma_tilde=np.asarray(arr["Sigma_tilde"], dtype=float),
+            E=np.asarray(arr["E"], dtype=float),
+            lambda_vals=np.asarray(arr["lambda_vals"], dtype=float),
+            age=None if age is None else np.asarray(age, dtype=float),
+            subject_ids=None if subject_ids is None else np.asarray(subject_ids),
+        )
     data.validate()
     return data

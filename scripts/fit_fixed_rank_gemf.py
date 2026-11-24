@@ -60,7 +60,10 @@ def make_summary(data, fit, model, args):
 
     summary = {
         "n": data.n,
-        "K": data.K,
+        "K_s": data.K_s,
+        "K_f": data.K_f,
+        "K_e": data.K_e,
+        **({"K": data.K_s} if data.K_s == data.K_f == data.K_e else {}),
         "q": data.q,
         "F": data.F,
         "C": data.C,

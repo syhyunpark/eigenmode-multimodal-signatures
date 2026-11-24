@@ -1,0 +1,11 @@
+{
+  "DATA_DESCRIPTION.md": "176ae9f6eb18a980a7f9acde6ee698a320dd5d602fe0dccd76e09662c3890c74",
+  "expected/control_matches.csv": "fe5713ff72343ab1d5f19af22d063a273aaa856147a371f42757e61465696e5a",
+  "expected/figure2_stability_by_fold.csv": "9f04118d74afa531b2525eff3b765303444746c28066645b1be7be2b3e2238de",
+  "expected/figure2_stability_summary.csv": "4baba2fe518303d321bdb02788b851d53b1277a7493eda38d5c82f2c2b208476",
+  "expected/resolution_matches.csv": "2c226bd78089368ae43ea971784c49a059d2f9121e0979b1cd4604c34f09c7a3",
+  "inputs.npz": "d8b497f9db7cdb89e68283cdbda0ebaf3e9e36140efacb93310ff72a35b4d2ff",
+  "reference.npz": "876603c50fa2755344e60e003dab8c7360f66b7984000335827cb2b550f68951",
+  "settings.json": "68455109b9c67a9b69cd209b8367d9eaaf9336761d30afc00f0923cddb279dda",
+  "splits.csv": "2d235af45e87fe078d099b5d5660cfc1905880b9614aff0147368eae8619aee1"
+}

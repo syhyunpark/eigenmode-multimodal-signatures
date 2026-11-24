@@ -7,8 +7,7 @@ from typing import Any, Dict, Tuple
 import numpy as np
 
 from gemf.data import load_multiview_npz
-from gemf.fixed_rank_model import FixedRankGMHFConfig as FixedRankGEMFConfig
-from gemf.fixed_rank_model import FixedRankGMHF as FixedRankGEMF
+from gemf.fixed_rank_model import FixedRankGEMF, FixedRankGEMFConfig
 from gemf.score_inference import (
     infer_shared_scores,
     infer_full_scores,
@@ -20,8 +19,8 @@ from gemf.score_inference import (
 
 def load_npz_dict(path: str | Path) -> Dict[str, np.ndarray]:
     path = Path(path)
-    arr = np.load(path, allow_pickle=True)
-    return {k: arr[k] for k in arr.files}
+    with np.load(path, allow_pickle=True) as arr:
+        return {k: arr[k] for k in arr.files}
 
 
 def save_npz_dict(path: str | Path, d: Dict[str, np.ndarray]) -> None:
@@ -33,9 +32,11 @@ def save_npz_dict(path: str | Path, d: Dict[str, np.ndarray]) -> None:
 def subset_npz_dict(d: Dict[str, np.ndarray], idx: np.ndarray) -> Dict[str, np.ndarray]:
     n = int(np.asarray(d["n"]).item()) if "n" in d else len(d["subject_ids"])
     out: Dict[str, np.ndarray] = {}
+    coordinate_keys = {"lambda_vals", "smri_measures", "eeg_freq_centers",
+                       "eeg_freq_bands", "condition_names"}
     for k, v in d.items():
         arr = np.asarray(v)
-        if arr.ndim >= 1 and arr.shape[0] == n:
+        if k not in coordinate_keys and arr.ndim >= 1 and arr.shape[0] == n:
             out[k] = arr[idx]
         else:
             out[k] = arr

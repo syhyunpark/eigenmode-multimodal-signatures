@@ -65,7 +65,7 @@ def _leading_rank1_factors(tensor: np.ndarray) -> tuple[np.ndarray, np.ndarray, 
 
 
 @dataclass
-class FixedRankGMHFConfig:
+class FixedRankGEMFConfig:
     R: int
     Ls: int = 0
     Lf: int = 0
@@ -91,7 +91,7 @@ class FixedRankGMHFConfig:
     verbose: bool = True
 
 
-class FixedRankGMHF:
+class FixedRankGEMF:
     """
     Full fixed-rank geometry-aligned multiview harmonic factorization.
 
@@ -106,7 +106,7 @@ class FixedRankGMHF:
         E_i            += sum_l u_il^(e) (a_l^(specific) ∘ b_l^(specific) ∘ c_l^(specific))
     """
 
-    def __init__(self, config: FixedRankGMHFConfig):
+    def __init__(self, config: FixedRankGEMFConfig):
         self.config = config
         self.rng = np.random.default_rng(config.random_state)
 
@@ -116,23 +116,25 @@ class FixedRankGMHF:
         self.U_f: Optional[np.ndarray] = None
         self.U_e: Optional[np.ndarray] = None
 
-        self.A_shared: Optional[np.ndarray] = None          # (R, K, q)
-        self.A_specific_s: Optional[np.ndarray] = None      # (Ls, K, q)
+        self.A_shared: Optional[np.ndarray] = None          # (R, K_s, q)
+        self.A_specific_s: Optional[np.ndarray] = None      # (Ls, K_s, q)
 
-        self.M_shared: Optional[np.ndarray] = None          # (R, K, K)
-        self.M_specific_f: Optional[np.ndarray] = None      # (Lf, K, K)
+        self.M_shared: Optional[np.ndarray] = None          # (R, K_f, K_f)
+        self.M_specific_f: Optional[np.ndarray] = None      # (Lf, K_f, K_f)
 
-        self.a_shared: Optional[np.ndarray] = None          # (R, K)
+        self.a_shared: Optional[np.ndarray] = None          # (R, K_e)
         self.b_shared: Optional[np.ndarray] = None          # (R, F)
         self.c_shared: Optional[np.ndarray] = None          # (R, C)
 
-        self.a_specific_e: Optional[np.ndarray] = None      # (Le, K)
+        self.a_specific_e: Optional[np.ndarray] = None      # (Le, K_e)
         self.b_specific_e: Optional[np.ndarray] = None      # (Le, F)
         self.c_specific_e: Optional[np.ndarray] = None      # (Le, C)
 
         # dimensions
         self.n: Optional[int] = None
-        self.K: Optional[int] = None
+        self.K_s: Optional[int] = None
+        self.K_f: Optional[int] = None
+        self.K_e: Optional[int] = None
         self.q: Optional[int] = None
         self.F: Optional[int] = None
         self.C: Optional[int] = None
@@ -148,6 +150,13 @@ class FixedRankGMHF:
             "penalty": [],
         }
 
+    @property
+    def K(self) -> Optional[int]:
+        """Common spatial dimension of an equal-bandwidth fit."""
+        if self.K_s == self.K_f == self.K_e:
+            return self.K_s
+        raise ValueError("Use K_s, K_f, and K_e for unequal modality dimensions")
+
     def _check_fitted(self) -> None:
         if self.Z is None:
             raise RuntimeError("Model is not fitted yet.")
@@ -160,12 +169,12 @@ class FixedRankGMHF:
     # ------------------------------------------------------------------
     def reconstruct_shared_smri(self) -> np.ndarray:
         if self.config.R == 0:
-            return np.zeros((self.n, self.K, self.q), dtype=float)
+            return np.zeros((self.n, self.K_s, self.q), dtype=float)
         return np.einsum("nr,rkq->nkq", self.Z, self.A_shared)
 
     def reconstruct_specific_smri(self) -> np.ndarray:
         if self.config.Ls == 0:
-            return np.zeros((self.n, self.K, self.q), dtype=float)
+            return np.zeros((self.n, self.K_s, self.q), dtype=float)
         return np.einsum("nl,lkq->nkq", self.U_s, self.A_specific_s)
 
     def reconstruct_total_smri(self) -> np.ndarray:
@@ -173,12 +182,12 @@ class FixedRankGMHF:
 
     def reconstruct_shared_fmri(self) -> np.ndarray:
         if self.config.R == 0:
-            return np.zeros((self.n, self.K, self.K), dtype=float)
+            return np.zeros((self.n, self.K_f, self.K_f), dtype=float)
         return np.einsum("nr,rkm->nkm", self.Z, self.M_shared)
 
     def reconstruct_specific_fmri(self) -> np.ndarray:
         if self.config.Lf == 0:
-            return np.zeros((self.n, self.K, self.K), dtype=float)
+            return np.zeros((self.n, self.K_f, self.K_f), dtype=float)
         return np.einsum("nl,lkm->nkm", self.U_f, self.M_specific_f)
 
     def reconstruct_total_fmri(self) -> np.ndarray:
@@ -197,12 +206,12 @@ class FixedRankGMHF:
 
     def reconstruct_shared_eeg(self) -> np.ndarray:
         if self.config.R == 0:
-            return np.zeros((self.n, self.K, self.F, self.C), dtype=float)
+            return np.zeros((self.n, self.K_e, self.F, self.C), dtype=float)
         return np.einsum("nr,rk,rf,rc->nkfc", self.Z, self.a_shared, self.b_shared, self.c_shared)
 
     def reconstruct_specific_eeg(self) -> np.ndarray:
         if self.config.Le == 0:
-            return np.zeros((self.n, self.K, self.F, self.C), dtype=float)
+            return np.zeros((self.n, self.K_e, self.F, self.C), dtype=float)
         return np.einsum(
             "nl,lk,lf,lc->nkfc",
             self.U_e, self.a_specific_e, self.b_specific_e, self.c_specific_e
@@ -215,9 +224,14 @@ class FixedRankGMHF:
     # Initialization
     # ------------------------------------------------------------------
     def initialize(self, data: MultiViewData) -> None:
-        self.n, self.K, self.q = data.S_tilde.shape
-        _, _, self.F, self.C = data.E.shape
+        data.validate()
+        self.n, self.K_s, self.q = data.S_tilde.shape
+        self.K_f = data.K_f
+        _, self.K_e, self.F, self.C = data.E.shape
         self.lambda_vals = data.lambda_vals.copy()
+        self.spatial_eigenvalues_s = self.lambda_vals[:self.K_s]
+        self.spatial_eigenvalues_f = self.lambda_vals[:self.K_f]
+        self.spatial_eigenvalues_e = self.lambda_vals[:self.K_e]
         self.D_f = _make_second_difference(self.F)
         self.DfTDf = self.D_f.T @ self.D_f if self.D_f.size > 0 else np.zeros((self.F, self.F))
 
@@ -244,9 +258,9 @@ class FixedRankGMHF:
         self.Z = Z0
 
         # -------- initialize shared loadings --------
-        self.A_shared = np.zeros((R, self.K, self.q), dtype=float)
-        self.M_shared = np.zeros((R, self.K, self.K), dtype=float)
-        self.a_shared = np.zeros((R, self.K), dtype=float)
+        self.A_shared = np.zeros((R, self.K_s, self.q), dtype=float)
+        self.M_shared = np.zeros((R, self.K_f, self.K_f), dtype=float)
+        self.a_shared = np.zeros((R, self.K_e), dtype=float)
         self.b_shared = np.zeros((R, self.F), dtype=float)
         self.c_shared = np.zeros((R, self.C), dtype=float)
 
@@ -254,17 +268,17 @@ class FixedRankGMHF:
         for r in range(R):
             zr = self.Z[:, r]
             num_s = np.sum(zr[:, None, None] * data.S_tilde, axis=0)
-            denom_s = zr.dot(zr) + self.config.lambda_s * self.lambda_vals
+            denom_s = zr.dot(zr) + self.config.lambda_s * self.spatial_eigenvalues_s
             self.A_shared[r] = num_s / denom_s[:, None]
 
             num_f = np.sum(zr[:, None, None] * data.Sigma_tilde, axis=0)
             denom_f = zr.dot(zr) + self.config.lambda_f * (
-                self.lambda_vals[:, None] + self.lambda_vals[None, :]
+                self.spatial_eigenvalues_f[:, None] + self.spatial_eigenvalues_f[None, :]
             )
             self.M_shared[r] = _symmetrize(num_f / denom_f)
 
         # EEG shared loadings by weighted rank-1 initialization
-        decay = 1.0 / np.sqrt(np.maximum(self.lambda_vals, 1.0))
+        decay = 1.0 / np.sqrt(np.maximum(self.spatial_eigenvalues_e, 1.0))
         for r in range(R):
             weighted_avg = np.einsum("n,nkfc->kfc", self.Z[:, r], data.E)
             a, b, c = _leading_rank1_factors(weighted_avg)
@@ -281,9 +295,9 @@ class FixedRankGMHF:
         self.U_f = np.zeros((self.n, Lf), dtype=float)
         self.U_e = np.zeros((self.n, Le), dtype=float)
 
-        self.A_specific_s = np.zeros((Ls, self.K, self.q), dtype=float)
-        self.M_specific_f = np.zeros((Lf, self.K, self.K), dtype=float)
-        self.a_specific_e = np.zeros((Le, self.K), dtype=float)
+        self.A_specific_s = np.zeros((Ls, self.K_s, self.q), dtype=float)
+        self.M_specific_f = np.zeros((Lf, self.K_f, self.K_f), dtype=float)
+        self.a_specific_e = np.zeros((Le, self.K_e), dtype=float)
         self.b_specific_e = np.zeros((Le, self.F), dtype=float)
         self.c_specific_e = np.zeros((Le, self.C), dtype=float)
 
@@ -297,13 +311,13 @@ class FixedRankGMHF:
         # reset current specific components
         if Ls > 0:
             self.U_s = np.zeros((self.n, Ls), dtype=float)
-            self.A_specific_s = np.zeros((Ls, self.K, self.q), dtype=float)
+            self.A_specific_s = np.zeros((Ls, self.K_s, self.q), dtype=float)
         if Lf > 0:
             self.U_f = np.zeros((self.n, Lf), dtype=float)
-            self.M_specific_f = np.zeros((Lf, self.K, self.K), dtype=float)
+            self.M_specific_f = np.zeros((Lf, self.K_f, self.K_f), dtype=float)
         if Le > 0:
             self.U_e = np.zeros((self.n, Le), dtype=float)
-            self.a_specific_e = np.zeros((Le, self.K), dtype=float)
+            self.a_specific_e = np.zeros((Le, self.K_e), dtype=float)
             self.b_specific_e = np.zeros((Le, self.F), dtype=float)
             self.c_specific_e = np.zeros((Le, self.C), dtype=float)
 
@@ -464,7 +478,7 @@ class FixedRankGMHF:
             zr = self.Z[:, r]
             T = data.S_tilde - specific_recon - shared_recon + zr[:, None, None] * self.A_shared[r][None, :, :]
             num = np.sum(zr[:, None, None] * T, axis=0)
-            denom = zr.dot(zr) + self.config.lambda_s * self.lambda_vals
+            denom = zr.dot(zr) + self.config.lambda_s * self.spatial_eigenvalues_s
             A_new = num / denom[:, None]
 
             shared_recon = shared_recon - zr[:, None, None] * self.A_shared[r][None, :, :] + zr[:, None, None] * A_new[None, :, :]
@@ -493,7 +507,7 @@ class FixedRankGMHF:
 
         specific_recon = self.reconstruct_specific_fmri()
         shared_recon = self.reconstruct_shared_fmri()
-        lam_sum = self.lambda_vals[:, None] + self.lambda_vals[None, :]
+        lam_sum = self.spatial_eigenvalues_f[:, None] + self.spatial_eigenvalues_f[None, :]
 
         for r in range(self.config.R):
             zr = self.Z[:, r]
@@ -534,7 +548,7 @@ class FixedRankGMHF:
 
         proj_a = np.einsum("nkfc,f,c->nk", T, b, c)
         num_a = np.einsum("n,nk->k", zr, proj_a)
-        denom_a = zr.dot(zr) * (b @ b) * (c @ c) + self.config.lambda_e * self.lambda_vals
+        denom_a = zr.dot(zr) * (b @ b) * (c @ c) + self.config.lambda_e * self.spatial_eigenvalues_e
         a = num_a / np.maximum(denom_a, 1e-10)
 
         proj_b = np.einsum("nkfc,k,c->nf", T, a, c)
@@ -620,17 +634,17 @@ class FixedRankGMHF:
     # ------------------------------------------------------------------
     def _compute_penalty(self) -> float:
         p_s = self.config.lambda_s * sum(
-            np.trace(A.T @ np.diag(self.lambda_vals) @ A) for A in self.A_shared
+            np.trace(A.T @ np.diag(self.spatial_eigenvalues_s) @ A) for A in self.A_shared
         ) if self.config.R > 0 else 0.0
 
         p_f = self.config.lambda_f * sum(
-            np.linalg.norm(np.sqrt(self.lambda_vals)[:, None] * M, ord="fro") ** 2
-            + np.linalg.norm(M * np.sqrt(self.lambda_vals)[None, :], ord="fro") ** 2
+            np.linalg.norm(np.sqrt(self.spatial_eigenvalues_f)[:, None] * M, ord="fro") ** 2
+            + np.linalg.norm(M * np.sqrt(self.spatial_eigenvalues_f)[None, :], ord="fro") ** 2
             for M in self.M_shared
         ) if self.config.R > 0 else 0.0
 
         p_e = self.config.lambda_e * sum(
-            a.T @ np.diag(self.lambda_vals) @ a for a in self.a_shared
+            a.T @ np.diag(self.spatial_eigenvalues_e) @ a for a in self.a_shared
         ) if self.config.R > 0 else 0.0
 
         p_b = self.config.zeta_e * sum(
@@ -697,7 +711,7 @@ class FixedRankGMHF:
     # ------------------------------------------------------------------
     # Fit loop
     # ------------------------------------------------------------------
-    def fit(self, data: MultiViewData) -> "FixedRankGMHF":
+    def fit(self, data: MultiViewData) -> "FixedRankGEMF":
         if self.Z is None:
             self.initialize(data)
 
@@ -828,8 +842,18 @@ class FixedRankGMHF:
             "history_loss_e": np.asarray(self.history_["loss_e"]),
             "history_penalty": np.asarray(self.history_["penalty"]),
             "lambda_vals": self.lambda_vals,
+            "K_s": self.K_s,
+            "K_f": self.K_f,
+            "K_e": self.K_e,
         }
         if data is not None:
+            if data.subject_ids is not None:
+                out["subject_ids"] = data.subject_ids.copy()
             out.update(self.compute_mode_energy_curves(data))
             out.update(self.compute_sharedness_curves(data))
         return out
+
+
+# Historical public names used by the submitted analysis scripts.
+FixedRankGMHFConfig = FixedRankGEMFConfig
+FixedRankGMHF = FixedRankGEMF
